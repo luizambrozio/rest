@@ -38,7 +38,7 @@ app.listen(port, function () {
 app.post('/cadUser', function(req, res) {
     
     console.log('aqui')
-
+    
     var userModel = new User();
     userModel.email = req.body.email;
     userModel.password = req.body.password;
@@ -51,7 +51,7 @@ app.post('/cadUser', function(req, res) {
 
 //Cadastrar novos Usuarios
 app.post('/signin', function(req, res) {
-User.findOne({email: req.body.email, password: req.body.password}, function(err, user) {
+    User.findOne({email: req.body.email, password: req.body.password}, function(err, user) {
         if (err) {
             res.json({
                 type: false,
@@ -68,7 +68,11 @@ User.findOne({email: req.body.email, password: req.body.password}, function(err,
                 userModel.email = req.body.email;
                 userModel.password = req.body.password;
                 userModel.save(function(err, user) {
-                    user.token = jwt.sign(user, JWT_SECRET);
+                    let payLoad = {
+                        email : user.email,
+                        exp : Math.floor(Date.now() / 1000) + (30*60)
+                    }
+                    user.token = jwt.sign(payLoad, JWT_SECRET);
                     user.save(function(err, user1) {
                         res.json({
                             type: true,
@@ -85,7 +89,7 @@ User.findOne({email: req.body.email, password: req.body.password}, function(err,
 
 //autenticar novos usuarios
 app.post('/authenticate', function(req, res) {
-User.findOne({email: req.body.email, password: req.body.password}, function(err, user) {
+    User.findOne({email: req.body.email, password: req.body.password}, function(err, user) {
         if (err) {
             res.json({
                 type: false,
@@ -93,10 +97,20 @@ User.findOne({email: req.body.email, password: req.body.password}, function(err,
             });
         } else {
             if (user) {
-               res.json({
-                    type: true,
-                    data: user,
-                    token: user.token
+                user.token = null
+                let payLoad = {
+                    email : user.email,
+                    exp : Math.floor(Date.now() / 1000) + (30*60)
+                }
+                user.token = jwt.sign(
+                    payLoad, 
+                    JWT_SECRET
+                );
+                console.log(user.token)
+                user.save(function(err, user1) {
+                    res.json({
+                        token: user.token
+                    });
                 });
             } else {
                 res.json({
@@ -108,8 +122,31 @@ User.findOne({email: req.body.email, password: req.body.password}, function(err,
     });
 });
 
+app.get('/session', (req, res) =>{
+    let auth = req.headers["authorization"];
+    
+    console.log(auth)
+    
+    if(!auth || !auth.startsWith('token')){
+        console.log('deu ruim session')
+        return res.status(401).json({Erro : 'sessao invalida'})        
+    } else {
+        auth = auth.split('token').pop().trim()
+        console.log('deu boa session')
+    }
+    jwt.verify(auth, JWT_SECRET, (err, data)=>{
+        console.log('============== jwt ==========')
+        if(err){
+            return res.status(401).json({erro : 'token invalido'});
+        }
+        
+        return res.status(201).json({data});
+    })
+})
+
+
 app.get('/me', ensureAuthorized, function(req, res) {
-User.findOne({token: req.token}, function(err, user) {
+    User.findOne({token: req.token}, function(err, user) {
         if (err) {
             res.json({
                 type: false,
@@ -125,7 +162,7 @@ User.findOne({token: req.token}, function(err, user) {
 });
 
 function ensureAuthorized(req, res, next) {
-var bearerToken;
+    var bearerToken;
     var bearerHeader = req.headers["authorization"];
     if (typeof bearerHeader !== 'undefined') {
         var bearer = bearerHeader.split(" ");
